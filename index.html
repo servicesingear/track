@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Simple PM - servicesingear</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--muted:#94a3b8;--accent:#7c3aed;--success:#10b981;--warning:#f59e0b;--danger:#ef4444}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,'Helvetica Neue',Arial; background:linear-gradient(180deg,#071024 0%, #071b2e 100%); color:#e6eef8; min-height:100vh}
+    .container{max-width:1100px;margin:28px auto;padding:18px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent); border:1px solid rgba(255,255,255,0.03); padding:16px; border-radius:12px; box-shadow: 0 6px 18px rgba(2,6,23,0.6)}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    h1{font-size:20px;margin:0}
+    .logo{display:flex;gap:10px;align-items:center}
+    .logo .badge{background:var(--accent);width:36px;height:36px;border-radius:9px;display:grid;place-items:center;font-weight:700}
+
+    /* Login */
+    .login-wrap{max-width:420px;margin:40px auto}
+    label{display:block;font-size:13px;margin-bottom:6px;color:var(--muted)}
+    input[type=text], input[type=email], textarea, select{width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit;font-size:14px}
+    .btn{display:inline-block;padding:10px 14px;border-radius:8px;border:none;cursor:pointer;font-weight:600}
+    .btn-primary{background:var(--accent);color:white}
+    .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+
+    /* dashboard layout */
+    .grid{display:grid;grid-template-columns:320px 1fr;gap:16px}
+    .sidebar .section{margin-bottom:12px}
+    .member{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px}
+    .avatar{width:36px;height:36px;border-radius:8px;background:rgba(255,255,255,0.04);display:grid;place-items:center}
+    .muted{color:var(--muted)}
+
+    .project-list{display:flex;flex-direction:column;gap:8px}
+    .project-item{padding:10px;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
+    .task-list{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+    .task{padding:10px;border-radius:8px;display:flex;justify-content:space-between;gap:12px;align-items:center}
+    .badge{padding:6px 8px;border-radius:999px;font-size:12px}
+    .status-todo{background:rgba(255,255,255,0.03);color:var(--muted)}
+    .status-in{background:rgba(124,58,237,0.12);color:var(--accent)}
+    .status-done{background:rgba(16,185,129,0.12);color:var(--success)}
+
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    .search{display:flex;gap:6px}
+    .search input{width:180px}
+
+    /* small */
+    .small{font-size:13px;color:var(--muted)}
+
+    /* modal */
+    .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:linear-gradient(180deg, rgba(2,6,23,0.6), rgba(2,6,23,0.8));z-index:60}
+    .modal.open{display:flex}
+    .modal .body{width:520px}
+
+    footer{margin-top:20px;color:var(--muted);font-size:13px;text-align:center}
+
+    @media (max-width:880px){.grid{grid-template-columns:1fr;}.sidebar{order:2}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo"><div class="badge">Si</div><div>
+        <h1>servicesingear — Simple PM</h1>
+        <div class="small">Frontend-only project & task manager</div>
+      </div></div>
+      <div id="userSummary" class="small muted"></div>
+    </header>
+
+    <main id="app"></main>
+
+    <footer class="muted">Built with ❤️ — Save the file as <code>project-manager.html</code> and open in browser. Data stored in browser localStorage.</footer>
+  </div>
+
+  <!-- modal skeleton -->
+  <div id="modal" class="modal" role="dialog">
+    <div class="card body">
+      <div id="modalContent"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button id="modalOk" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // Simple single-file frontend Project Manager
+  // Persistence via localStorage (keys: pm_user, pm_projects, pm_tasks, pm_members)
+
+  const STORAGE = {
+    user: 'pm_user', projects: 'pm_projects', tasks: 'pm_tasks', members: 'pm_members'
+  }
+
+  // Seed members
+  function seedMembers(){
+    const m = [
+      {id: uid(),'name':'Anita Rao','email':'anita@servicesingear.com','maxTasks':6},
+      {id: uid(),'name':'Rohan Singh','email':'rohan@servicesingear.com','maxTasks':6},
+      {id: uid(),'name':'Priya Patel','email':'priya@servicesingear.com','maxTasks':6},
+      {id: uid(),'name':'Dev Ops','email':'devops@servicesingear.com','maxTasks':4}
+    ];
+    localStorage.setItem(STORAGE.members, JSON.stringify(m));
+    return m;
+  }
+
+  function loadOrSeed(key, seedFn){
+    const raw = localStorage.getItem(key);
+    if(!raw){
+      if(seedFn) return seedFn();
+      return [];
+    }
+    try{return JSON.parse(raw)||[] }catch(e){return []}
+  }
+
+  // utilities
+  function uid(){return 'id_'+Math.random().toString(36).slice(2,9)}
+  function now(){return new Date().toISOString()}
+
+  // app state helpers
+  function getUser(){return JSON.parse(localStorage.getItem(STORAGE.user)||'null')}
+  function setUser(u){localStorage.setItem(STORAGE.user, JSON.stringify(u));}
+  function clearUser(){localStorage.removeItem(STORAGE.user)}
+
+  function getProjects(){return loadOrSeed(STORAGE.projects)}
+  function saveProjects(p){localStorage.setItem(STORAGE.projects, JSON.stringify(p))}
+
+  function getTasks(){return loadOrSeed(STORAGE.tasks)}
+  function saveTasks(t){localStorage.setItem(STORAGE.tasks, JSON.stringify(t))}
+
+  function getMembers(){return loadOrSeed(STORAGE.members, seedMembers)}
+  function saveMembers(m){localStorage.setItem(STORAGE.members, JSON.stringify(m))}
+
+  // availability: members with assigned tasks < maxTasks
+  function memberAssignedCount(mid){
+    const tasks = getTasks().filter(t=>t.assigneeId===mid && t.status!=='completed')
+    return tasks.length
+  }
+
+  // ---- UI renderers ----
+  const app = document.getElementById('app')
+  const userSummary = document.getElementById('userSummary')
+
+  function render(){
+    const user = getUser()
+    if(!user){ renderLogin(); return }
+    userSummary.innerHTML = `${user.name} — <a href='#' onclick='logout()' style='color:inherit;text-decoration:underline'>Logout</a>`
+    renderDashboard()
+  }
+
+  function renderLogin(){
+    userSummary.innerHTML=''
+    app.innerHTML = `
+      <div class="login-wrap card">
+        <h2 style="margin-top:0">Welcome — Login</h2>
+        <p class="small muted">Use your <code>@servicesingear.com</code> email to sign in.</p>
+        <div style="margin-top:12px">
+          <label for="email">Email</label>
+          <input id="email" type="email" placeholder="name@servicesingear.com" />
+        </div>
+        <div style="margin-top:8px">
+          <label for="name">Full name</label>
+          <input id="name" type="text" placeholder="Your full name" />
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-ghost" onclick="demoSeed()">Use demo data</button>
+          <button class="btn btn-primary" onclick="login()">Sign in</button>
+        </div>
+      </div>
+    `
+  }
+
+  function demoSeed(){
+    // seed some projects and tasks for demo purposes
+    const projects = [
+      {id: uid(), name:'Website Revamp', description:'New homepage + marketing pages', createdAt: now()},
+      {id: uid(), name:'Mobile App', description:'MVP build', createdAt: now()}
+    ]
+    saveProjects(projects)
+    const members = getMembers()
+    const tasks = [
+      {id:uid(), projectId:projects[0].id, title:'Design hero section', assigneeId:members[0].id, status:'inprogress', createdAt:now()},
+      {id:uid(), projectId:projects[0].id, title:'Implement header', assigneeId:members[1].id, status:'todo', createdAt:now()},
+      {id:uid(), projectId:projects[1].id, title:'API contract', assigneeId:members[2].id, status:'todo', createdAt:now()}
+    ]
+    saveTasks(tasks)
+    alert('Demo data seeded — now sign in')
+  }
+
+  function login(){
+    const email = document.getElementById('email').value.trim().toLowerCase()
+    const name = document.getElementById('name').value.trim()
+    if(!email || !name) return alert('Enter name and email')
+    if(!email.endsWith('@servicesingear.com')) return alert('Email must be @servicesingear.com')
+    const user = {id:uid(), name, email}
+    setUser(user)
+    // ensure user exists as member (optional)
+    const members = getMembers()
+    if(!members.some(m=>m.email===email)){
+      members.push({id:uid(), name, email, maxTasks:5})
+      saveMembers(members)
+    }
+    render()
+  }
+
+  function logout(){ if(confirm('Logout?')){ clearUser(); render(); } }
+
+  // dashboard components
+  function renderDashboard(){
+    const projects = getProjects()
+    const tasks = getTasks()
+    const members = getMembers()
+    const user = getUser()
+
+    app.innerHTML = `
+      <div class="grid">
+        <aside class="sidebar card">
+          <div class="section">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <strong>Projects</strong>
+              <button class="btn btn-ghost" onclick="openCreateProject()">+ New</button>
+            </div>
+            <div class="project-list" id="projectList"></div>
+          </div>
+
+          <div class="section">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <strong>Team</strong>
+              <button class="btn btn-ghost" onclick="openAddMember()">+ Add</button>
+            </div>
+            <div id="memberList" style="margin-top:8px"></div>
+          </div>
+        </aside>
+
+        <section class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <h3 style="margin:0">All Tasks</h3>
+              <div class="small muted">Create tasks, assign, and update status</div>
+            </div>
+            <div class="controls">
+              <div class="search"><input id="globalSearch" placeholder="Search tasks or assignee" oninput="renderTaskArea()" /></div>
+              <button class="btn btn-primary" onclick="openCreateTask()">+ New Task</button>
+            </div>
+          </div>
+
+          <div id="taskArea" style="margin-top:12px"></div>
+        </section>
+      </div>
+    `
+
+    // fill project list
+    const projectList = document.getElementById('projectList')
+    projectList.innerHTML = ''
+    projects.forEach(p=>{
+      const el = document.createElement('div'); el.className='project-item';
+      el.innerHTML = `<div><strong>${escapeHtml(p.name)}</strong><div class='small muted'>${escapeHtml(p.description||'')}</div></div>
+      <div style='display:flex;gap:8px'><button class='btn btn-ghost small' onclick='viewProject("${p.id}")'>View</button>
+      <button class='btn btn-ghost small' onclick='deleteProject("${p.id}")'>Del</button></div>`
+      projectList.appendChild(el)
+    })
+
+    // fill members
+    const memberList = document.getElementById('memberList')
+    memberList.innerHTML = ''
+    members.forEach(m=>{
+      const count = memberAssignedCount(m.id)
+      const el = document.createElement('div'); el.className='member';
+      el.innerHTML = `<div class='avatar'>${initials(m.name)}</div><div style='flex:1'><div><strong>${escapeHtml(m.name)}</strong> <span class='small muted'>&lt;${m.email}&gt;</span></div><div class='small muted'>${count} active / ${m.maxTasks} max</div></div>
+      <div style='text-align:right'><button class='btn btn-ghost small' onclick='viewMember("${m.id}")'>View</button></div>`
+      memberList.appendChild(el)
+    })
+
+    renderTaskArea()
+  }
+
+  function renderTaskArea(filterProjectId){
+    const tasks = getTasks()
+    const projects = getProjects()
+    const members = getMembers()
+    const q = (document.getElementById('globalSearch')?.value||'').toLowerCase()
+    let list = tasks.slice()
+    if(filterProjectId) list = list.filter(t=>t.projectId===filterProjectId)
+    if(q) list = list.filter(t=> (t.title||'').toLowerCase().includes(q) || (getMemberById(t.assigneeId)?.name||'').toLowerCase().includes(q) )
+
+    const taskArea = document.getElementById('taskArea')
+    if(list.length===0){ taskArea.innerHTML = '<div class="muted">No tasks found — create one.</div>'; return }
+
+    // group by status
+    const byStatus = {todo:[], inprogress:[], completed:[]}
+    list.forEach(t=>byStatus[t.status||'todo'].push(t))
+
+    taskArea.innerHTML = `
+      <div style='display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px'>
+        ${renderStatusColumn('todo', 'Todo', byStatus.todo)}
+        ${renderStatusColumn('inprogress', 'In Progress', byStatus.inprogress)}
+        ${renderStatusColumn('completed', 'Completed', byStatus.completed)}
+      </div>
+    `
+  }
+
+  function renderStatusColumn(key, title, tasks){
+    return `
+      <div>
+        <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><strong>${title}</strong><span class='small muted'>${tasks.length}</span></div>
+        <div>
+          ${tasks.map(t=>renderTaskCard(t)).join('')}
+        </div>
+      </div>
+    `
+  }
+
+  function renderTaskCard(t){
+    const assignee = getMemberById(t.assigneeId)
+    const proj = getProjects().find(p=>p.id===t.projectId) || {name:'—'}
+    return `
+      <div class='task card' style='margin-bottom:8px'>
+        <div style='flex:1'>
+          <div><strong>${escapeHtml(t.title)}</strong></div>
+          <div class='small muted'>${escapeHtml(proj.name)} • ${escapeHtml(t.createdAt?.slice(0,10)||'')}</div>
+        </div>
+        <div style='text-align:right;min-width:160px'>
+          <div class='small muted'>${assignee?escapeHtml(assignee.name):'<span style="color:var(--muted)">Unassigned</span>'}</div>
+          <div style='display:flex;gap:6px;align-items:center;margin-top:8px;justify-content:flex-end'>
+            <select onchange='changeStatus("${t.id}",this.value)'>
+              <option value='todo' ${t.status==='todo'?'selected':''}>Todo</option>
+              <option value='inprogress' ${t.status==='inprogress'?'selected':''}>In Progress</option>
+              <option value='completed' ${t.status==='completed'?'selected':''}>Completed</option>
+            </select>
+            <button class='btn btn-ghost small' onclick='openEditTask("${t.id}")'>Edit</button>
+            <button class='btn btn-ghost small' onclick='deleteTask("${t.id}")'>Del</button>
+          </div>
+        </div>
+      </div>
+    `
+  }
+
+  function changeStatus(taskId, status){
+    const tasks = getTasks()
+    const t = tasks.find(x=>x.id===taskId); if(!t) return
+    t.status = status
+    saveTasks(tasks); renderTaskArea()
+  }
+
+  // ---- project actions ----
+  function openCreateProject(){
+    showModal(`<h3>Create Project</h3>
+      <div style='margin-top:8px'><label>Project name</label><input id='projName' /></div>
+      <div style='margin-top:8px'><label>Description</label><textarea id='projDesc'></textarea></div>
+    `, ()=>{
+      const name = document.getElementById('projName').value.trim();
+      if(!name) return alert('Name required')
+      const p = {id:uid(), name, description:document.getElementById('projDesc').value.trim(), createdAt:now()}
+      const projects = getProjects(); projects.push(p); saveProjects(projects); closeModal(); render()
+    })
+  }
+
+  function viewProject(id){
+    const p = getProjects().find(x=>x.id===id); if(!p) return
+    app.scrollIntoView({behavior:'smooth'})
+    renderDashboard()
+    renderTaskArea(id)
+  }
+
+  function deleteProject(id){ if(!confirm('Delete project and its tasks?')) return; const projects=getProjects().filter(p=>p.id!==id); saveProjects(projects); const tasks=getTasks().filter(t=>t.projectId!==id); saveTasks(tasks); render(); }
+
+  // ---- members ----
+  function openAddMember(){ showModal(`<h3>Add Team Member</h3><div style='margin-top:8px'><label>Name</label><input id='mName' /></div><div style='margin-top:8px'><label>Email</label><input id='mEmail' placeholder='x@servicesingear.com' /></div><div style='margin-top:8px'><label>Max tasks</label><input id='mMax' type='number' value='6' /></div>`, ()=>{ const name=document.getElementById('mName').value.trim(); const email=document.getElementById('mEmail').value.trim().toLowerCase(); const max=parseInt(document.getElementById('mMax').value)||6; if(!name||!email) return alert('name and email'); const members=getMembers(); members.push({id:uid(),name,email,maxTasks:max}); saveMembers(members); closeModal(); render(); }) }
+
+  function viewMember(id){ const m=getMemberById(id); if(!m) return; const assigned = getTasks().filter(t=>t.assigneeId===id); showModal(`<h3>${escapeHtml(m.name)}</h3><div class='small muted'>${escapeHtml(m.email)}</div><div style='margin-top:8px'><strong>Assigned tasks:</strong><div style='margin-top:8px'>${assigned.map(t=>`<div class='small'>• ${escapeHtml(t.title)} <span class='muted'>(${t.status})</span></div>`).join('')}</div></div>`, ()=>{ closeModal() }) }
+
+  function getMemberById(id){ return getMembers().find(m=>m.id===id) }
+
+  // ---- tasks ----
+  function openCreateTask(){
+    const projects = getProjects();
+    if(projects.length===0) return alert('Create a project first')
+    const members = getMembers();
+    const projectOptions = projects.map(p=>`<option value='${p.id}'>${escapeHtml(p.name)}</option>`).join('')
+    showModal(`<h3>Create Task</h3>
+      <div style='margin-top:8px'><label>Title</label><input id='tTitle' /></div>
+      <div style='margin-top:8px'><label>Project</label><select id='tProject'>${projectOptions}</select></div>
+      <div style='margin-top:8px'><label>Assign to (search)</label><input id='assigneeSearch' placeholder='Type name or email' oninput='renderAssigneeList()' /></div>
+      <div id='assigneeList' style='margin-top:8px;max-height:120px;overflow:auto'></div>
+    `, ()=>{
+      const title=document.getElementById('tTitle').value.trim(); const projectId=document.getElementById('tProject').value; const selected = document.querySelector('input[name="assigneeRad"]:checked')
+      const assigneeId = selected ? selected.value : null
+      if(!title) return alert('Title required')
+      const tasks = getTasks(); tasks.push({id:uid(), title, projectId, assigneeId, status:'todo', createdAt:now()}); saveTasks(tasks); closeModal(); render(); })
+
+    // initial assignee list
+    setTimeout(renderAssigneeList,40)
+  }
+
+  function renderAssigneeList(){
+    const q = (document.getElementById('assigneeSearch')?.value||'').toLowerCase()
+    const members = getMembers()
+    const html = members.filter(m=>m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)).map(m=>{
+      const count = memberAssignedCount(m.id)
+      const available = count < m.maxTasks
+      return `<label style='display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;background:rgba(255,255,255,0.01);margin-bottom:6px'><input type='radio' name='assigneeRad' value='${m.id}' ${available?'':'disabled'} /> <div style='flex:1'><strong>${escapeHtml(m.name)}</strong> <div class='small muted'>${escapeHtml(m.email)}</div></div><div class='small muted'>${count}/${m.maxTasks}${available?'':' • full'}</div></label>`
+    }).join('')
+    document.getElementById('assigneeList').innerHTML = html || '<div class="muted small">No matching members</div>'
+  }
+
+  function openEditTask(taskId){
+    const tasks = getTasks(); const t = tasks.find(x=>x.id===taskId); if(!t) return
+    const projects = getProjects()
+    const projectOptions = projects.map(p=>`<option value='${p.id}' ${p.id===t.projectId?'selected':''}>${escapeHtml(p.name)}</option>`).join('')
+    showModal(`<h3>Edit Task</h3>
+      <div style='margin-top:8px'><label>Title</label><input id='tTitle' value='${escapeHtml(t.title)}' /></div>
+      <div style='margin-top:8px'><label>Project</label><select id='tProject'>${projectOptions}</select></div>
+      <div style='margin-top:8px'><label>Assignee (search)</label><input id='assigneeSearch' placeholder='Type name or email' oninput='renderAssigneeListEdit("${t.id}")' /></div>
+      <div id='assigneeList' style='margin-top:8px;max-height:120px;overflow:auto'></div>
+    `, ()=>{
+      t.title = document.getElementById('tTitle').value.trim(); t.projectId = document.getElementById('tProject').value; const selected = document.querySelector('input[name="assigneeRad"]:checked'); t.assigneeId = selected ? selected.value : null; saveTasks(tasks); closeModal(); render(); })
+
+    setTimeout(()=>renderAssigneeListEdit(taskId),40)
+  }
+
+  function renderAssigneeListEdit(taskId){
+    const q = (document.getElementById('assigneeSearch')?.value||'').toLowerCase()
+    const members = getMembers()
+    const tasks = getTasks()
+    const t = tasks.find(x=>x.id===taskId)
+    const html = members.filter(m=>m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)).map(m=>{
+      const count = memberAssignedCount(m.id)
+      const available = (m.id===t.assigneeId) || (count < m.maxTasks)
+      return `<label style='display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;background:rgba(255,255,255,0.01);margin-bottom:6px'><input type='radio' name='assigneeRad' value='${m.id}' ${t.assigneeId===m.id?'checked':''} ${available?'':'disabled'} /> <div style='flex:1'><strong>${escapeHtml(m.name)}</strong> <div class='small muted'>${escapeHtml(m.email)}</div></div><div class='small muted'>${count}/${m.maxTasks}${available?'':' • full'}</div></label>`
+    }).join('')
+    document.getElementById('assigneeList').innerHTML = html || '<div class="muted small">No matching members</div>'
+  }
+
+  function deleteTask(id){ if(!confirm('Delete this task?')) return; const tasks = getTasks().filter(t=>t.id!==id); saveTasks(tasks); render(); }
+
+  // ---- modal helpers ----
+  const modal = document.getElementById('modal')
+  const modalContent = document.getElementById('modalContent')
+  const modalOk = document.getElementById('modalOk')
+  let modalCallback = null
+  function showModal(html, onOk){ modalContent.innerHTML = html; modal.classList.add('open'); modalCallback = onOk }
+  function closeModal(){ modal.classList.remove('open'); modalContent.innerHTML=''; modalCallback=null }
+  modalOk.addEventListener('click', ()=>{ if(modalCallback) modalCallback() })
+  modal.addEventListener('click', (e)=>{ if(e.target===modal) closeModal() })
+
+  // helpers
+  function escapeHtml(s){ if(!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+  function initials(name){ if(!name) return '?'; return name.split(' ').slice(0,2).map(x=>x[0]?.toUpperCase()||'').join('') }
+
+  // small utilities for quick edit
+  function openEditMember(id){ const m = getMemberById(id); if(!m) return; showModal(`<h3>Edit Member</h3><div style='margin-top:8px'><label>Name</label><input id='mName' value='${escapeHtml(m.name)}' /></div><div style='margin-top:8px'><label>Email</label><input id='mEmail' value='${escapeHtml(m.email)}' /></div><div style='margin-top:8px'><label>Max tasks</label><input id='mMax' type='number' value='${m.maxTasks}' /></div>`, ()=>{ m.name=document.getElementById('mName').value.trim(); m.email=document.getElementById('mEmail').value.trim(); m.maxTasks=parseInt(document.getElementById('mMax').value)||6; saveMembers(getMembers()); closeModal(); render(); }) }
+
+  // small delete member
+  function deleteMember(id){ if(!confirm('Delete member? Tasks will become unassigned')) return; saveMembers(getMembers().filter(m=>m.id!==id)); const tasks = getTasks().map(t=> t.assigneeId===id? {...t, assigneeId:null} : t ); saveTasks(tasks); render(); }
+
+  // quick helper to reset all data (for dev)
+  function resetAll(){ if(!confirm('Reset ALL app data?')) return; localStorage.removeItem(STORAGE.projects); localStorage.removeItem(STORAGE.tasks); localStorage.removeItem(STORAGE.members); localStorage.removeItem(STORAGE.user); location.reload() }
+
+  // small escaped helper for clickable small actions
+  window.openCreateProject = openCreateProject
+  window.openCreateTask = openCreateTask
+  window.openAddMember = openAddMember
+  window.renderAssigneeList = renderAssigneeList
+  window.openEditTask = openEditTask
+  window.renderAssigneeListEdit = renderAssigneeListEdit
+  window.viewProject = viewProject
+  window.viewMember = viewMember
+  window.deleteProject = deleteProject
+  window.deleteTask = deleteTask
+  window.changeStatus = changeStatus
+  window.viewMember = viewMember
+  window.logout = logout
+  window.deleteMember = deleteMember
+  window.openEditMember = openEditMember
+  window.resetAll = resetAll
+  window.demoSeed = demoSeed
+
+  // initial render
+  render()
+  </script>
+</body>
+</html>
